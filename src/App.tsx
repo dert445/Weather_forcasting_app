@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Wind, Droplets, Sun, Cloud, CloudRain, Snowflake, CloudLightning, CloudDrizzle, MapPin, AlertCircle } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
+import { motion } from 'motion/react';
+import { popularCities } from './cities';
 
 // Types
 interface WeatherData {
@@ -33,7 +36,7 @@ interface ForecastData {
   }>;
 }
 
-const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY || 'YOUR_OPENWEATHERMAP_API_KEY';
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY';
 
 export default function App() {
   const [city, setCity] = useState('London');
@@ -42,39 +45,81 @@ export default function App() {
   const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Search Autocomplete state
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
+  // Keep track of search box container to close dropdown when clicking outside
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const fetchWeather = async (searchCity: string) => {
-    if (!API_KEY || API_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
-      setError('OpenWeatherMap API key is missing. Please add VITE_OPENWEATHER_API_KEY to your environment variables.');
+    if (!API_KEY || API_KEY === 'YOUR_GEMINI_API_KEY') {
+      setError('Gemini API key is missing. Please add VITE_GEMINI_API_KEY to your .env file.');
       return;
     }
 
     setLoading(true);
     setError('');
+    setShowSuggestions(false);
     
     try {
-      const [weatherRes, forecastRes] = await Promise.all([
-        fetch(`https://api.openweathermap.org/data/2.5/weather?q=${searchCity}&appid=${API_KEY}&units=metric`),
-        fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${searchCity}&appid=${API_KEY}&units=metric`)
-      ]);
-
-      if (!weatherRes.ok || !forecastRes.ok) {
-        if (weatherRes.status === 404) {
-          throw new Error('City not found. Please check the spelling and try again.');
-        } else if (weatherRes.status === 401) {
-           throw new Error('Invalid API key. Please check your OpenWeatherMap API key.');
-        }
-        throw new Error('Failed to fetch weather data. Please try again later.');
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      const prompt = `Return a JSON object containing current weather and a 5-day forecast for ${searchCity}. 
+Make the weather highly realistic for the current season.
+The JSON must perfectly match this structure without markdown formatting or backticks:
+{
+  "weatherData": {
+    "name": "${searchCity}",
+    "main": { "temp": 22, "humidity": 55, "feels_like": 23 },
+    "wind": { "speed": 4.5 },
+    "weather": [{ "main": "Clouds", "description": "scattered clouds", "icon": "03d" }]
+  },
+  "forecastData": {
+    "list": [
+      {
+        "dt": 1712145600,
+        "main": { "temp": 20 },
+        "weather": [{ "main": "Clear", "icon": "01d" }],
+        "dt_txt": "2024-04-04 12:00:00"
       }
+      // exactly 5 items corresponding to 12:00:00 for the next 5 days
+    ]
+  }
+}
+Valid 'main' weather values MUST be exactly one of: Clear, Clouds, Rain, Drizzle, Thunderstorm, Snow.`;
 
-      const weatherData = await weatherRes.json();
-      const forecastData = await forecastRes.json();
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+        }
+      });
 
-      setWeather(weatherData);
-      setForecast(forecastData);
-      setCity(weatherData.name);
+      if (!response.text) {
+          throw new Error('Failed to generate valid weather data.');
+      }
+      const data = JSON.parse(response.text);
+
+      setWeather(data.weatherData);
+      setForecast(data.forecastData);
+      setCity(data.weatherData.name);
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+      console.error(err);
+      setError(err.message || 'An unexpected error occurred during AI generation.');
     } finally {
       setLoading(false);
     }
@@ -84,23 +129,78 @@ export default function App() {
     fetchWeather(city);
   }, []);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchInput(value);
+    
+    if (value.length > 0) {
+      const filtered = popularCities.filter(c => c.toLowerCase().startsWith(value.toLowerCase()));
+      setSuggestions(filtered);
+      setShowSuggestions(true);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchInput.trim()) {
       fetchWeather(searchInput.trim());
       setSearchInput('');
+      setSuggestions([]);
+      setShowSuggestions(false);
     }
+  };
+  
+  const handleSuggestionClick = (suggestion: string) => {
+    setSearchInput(suggestion);
+    fetchWeather(suggestion);
+    setSearchInput('');
+    setSuggestions([]);
+    setShowSuggestions(false);
   };
 
   const getWeatherIcon = (condition: string, className = "w-6 h-6") => {
     switch (condition.toLowerCase()) {
-      case 'clear': return <Sun className={className} />;
-      case 'clouds': return <Cloud className={className} />;
-      case 'rain': return <CloudRain className={className} />;
-      case 'drizzle': return <CloudDrizzle className={className} />;
-      case 'thunderstorm': return <CloudLightning className={className} />;
-      case 'snow': return <Snowflake className={className} />;
-      default: return <Sun className={className} />;
+      case 'clear': 
+        return (
+          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 8, ease: "linear" }}>
+            <Sun className={className} />
+          </motion.div>
+        );
+      case 'clouds': 
+        return (
+          <motion.div animate={{ x: [-2, 2, -2] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}>
+            <Cloud className={className} />
+          </motion.div>
+        );
+      case 'rain': 
+        return (
+          <motion.div animate={{ y: [-2, 2, -2] }} transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}>
+            <CloudRain className={className} />
+          </motion.div>
+        );
+      case 'drizzle': 
+        return (
+          <motion.div animate={{ y: [-1, 1, -1], x: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}>
+            <CloudDrizzle className={className} />
+          </motion.div>
+        );
+      case 'thunderstorm': 
+        return (
+          <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 0.5, ease: "bounce" }}>
+            <CloudLightning className={className} />
+          </motion.div>
+        );
+      case 'snow': 
+        return (
+          <motion.div animate={{ rotate: [0, 10, -10, 0], y: [-2, 2, -2] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}>
+            <Snowflake className={className} />
+          </motion.div>
+        );
+      default: 
+        return <Sun className={className} />;
     }
   };
 
@@ -133,17 +233,35 @@ export default function App() {
             WeatherApp
           </h1>
           
-          <form onSubmit={handleSearch} className="w-full md:w-auto relative text-slate-900">
-            <input
-              type="text"
-              placeholder="Search city..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full md:w-80 pl-10 pr-4 py-3 rounded-full bg-white/40 backdrop-blur-md border border-white/50 placeholder:text-slate-700 focus:outline-none focus:ring-2 focus:ring-white/70 transition-all shadow-lg"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-70" />
-            <button type="submit" className="hidden">Search</button>
-          </form>
+          <div ref={searchRef} className="w-full md:w-auto relative">
+            <form onSubmit={handleSearch} className="relative text-slate-900 z-20">
+              <input
+                type="text"
+                placeholder="Search city..."
+                value={searchInput}
+                onChange={handleInputChange}
+                onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }}
+                className="w-full md:w-80 pl-10 pr-4 py-3 rounded-full bg-white/40 backdrop-blur-md border border-white/50 placeholder:text-slate-700 focus:outline-none focus:ring-2 focus:ring-white/70 transition-all shadow-lg"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-70" />
+              <button type="submit" className="hidden">Search</button>
+            </form>
+            
+            {/* Suggestions Dropdown */}
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute top-full left-0 right-0 mt-2 bg-white/80 backdrop-blur-xl border border-white/40 rounded-2xl shadow-xl overflow-hidden z-10 max-h-60 overflow-y-auto">
+                {suggestions.map((suggestion) => (
+                  <li 
+                    key={suggestion}
+                    onClick={() => handleSuggestionClick(suggestion)}
+                    className="px-4 py-3 cursor-pointer hover:bg-white/50 text-slate-800 transition-colors border-b border-white/20 last:border-0"
+                  >
+                    {suggestion}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </header>
 
         {/* Error Message */}
@@ -174,7 +292,7 @@ export default function App() {
                   </div>
                   <p className="text-xl opacity-90 capitalize">{weather.weather[0].description}</p>
                 </div>
-                <div className="p-4 bg-white/30 rounded-2xl backdrop-blur-md shadow-inner">
+                <div className="p-4 bg-white/30 rounded-2xl backdrop-blur-md shadow-inner overflow-hidden">
                   {getWeatherIcon(weather.weather[0].main, "w-16 h-16")}
                 </div>
               </div>
@@ -218,7 +336,7 @@ export default function App() {
                   return (
                     <div key={day.dt} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/30 transition-colors">
                       <span className="font-medium w-12">{dayName}</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
                         {getWeatherIcon(day.weather[0].main, "w-6 h-6")}
                         <span className="text-sm opacity-90 capitalize hidden sm:inline-block w-20 truncate font-medium">
                           {day.weather[0].main}
