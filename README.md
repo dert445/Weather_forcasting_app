@@ -1,19 +1,54 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Weather Forecast App
 
-# Weather Forecasting App
+A fast, responsive, and beautifully designed weather forecasting application built with React, Vite, and Tailwind CSS. The application dynamically adjusts its background and user interface elements depending on the real-time weather conditions of the selected city.
 
-A real-time weather forecasting application built with React and Vite.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/7793f358-5404-4f0e-a801-258b86689372
+- **Live Weather Data**: Retrieve current weather details including temperature, humidity, wind speed, and weather conditions.
+- **Dynamic Styling**: Beautiful UI with background gradients that change according to the weather.
+- **5-Day Forecast**: Get a 5-day weather forecast summary updated daily at 12:00 PM.
+- **Modern Tech Stack**: Uses React 19, Tailwind CSS v3, and Vite for blazing fast performance.
+- **Responsive Design**: Mobile-friendly layout scaling perfectly to larger screens.
 
-## Run Locally
+## Getting Started
 
-**Prerequisites:** Node.js
+### Prerequisites
 
-1. Install dependencies:
-   `npm install`
-2. Set the required API keys (e.g., `GEMINI_API_KEY`) in `.env.local`
-3. Run the app:
-   `npm run dev`
+You need [Node.js](https://nodejs.org/) installed on your machine.
+
+### API Key Setup
+
+This application relies on the free [OpenWeatherMap API](https://openweathermap.org/api) to fetch weather data.
+1. Sign up for a free account at OpenWeatherMap.
+2. Get your API key from the dashboard.
+3. Rename `.env.example` to `.env`.
+4. Add your API key inside `.env`:
+   ```bash
+   VITE_OPENWEATHER_API_KEY="your_api_key_here"
+   ```
+
+### Installation
+
+1. Install the dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Build for production:
+   ```bash
+   npm run build
+   ```
+   You can find your production-ready compiled files in the `dist` folder.
+
+## Scripts overview
+
+- `npm run dev`: Runs the development server.
+- `npm run build`: Bundles the app into static files for production.
+- `npm run preview`: Locally preview your production build.
+- `npm run lint`: Analyzes the typescript code for type issues.
+- `npm run clean`: Removes the `dist` build directory.

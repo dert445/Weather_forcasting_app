@@ -33,7 +33,7 @@ interface ForecastData {
   }>;
 }
 
-const API_KEY = 'AIzaSyD3BDirQXaUaWUXg_4J6EXMmBrie1sin_Y';
+const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY || 'YOUR_OPENWEATHERMAP_API_KEY';
 
 export default function App() {
   const [city, setCity] = useState('London');
